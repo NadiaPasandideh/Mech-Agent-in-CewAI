@@ -1,0 +1,301 @@
+# config/tasks.yaml
+receive_problem_task:
+  description: >
+    Analyze the following elasticity problem description:
+    Problem: {problem_statement}
+
+    Your responsibilities include:
+    1. Carefully read and understand the user's elasticity problem description
+    2. Identify the type of PDE (partial differential equation) to be solved
+    3. Determine the domain geometry and boundary conditions
+    4. Extract physical parameters, material properties, and numerical requirements
+    5. Identify the appropriate finite element formulation and function spaces needed
+    6. Determine mesh requirements and computational constraints
+    7. Prepare a clear, structured problem statement for the Assistant Engineer
+    8. Ensure all necessary mathematical and computational context is captured
+    You must not ask clarifying questions, but instead, make reasonable assumptions based on the provided problem and clearly state them in your output.
+    Ensure all these details are in the output for the Assistant Engineer to use.
+  expected_output: >
+    A comprehensive computational physics problem analysis document containing:
+    - Expressing a clear mathematical problem with governing equations and weak form of the equation
+    - Domain geometry and boundary condition specifications
+    - Physical parameters and material properties
+    - Required finite element formulation and function space requirements
+    - Mesh generation and computational requirements
+  agent: user_proxy
+  # output_file: "fenics_solution_complete56.md"
+  
+
+generate_initial_fenics_code_task:
+  description: >
+    Based on the computational physics problem analysis received from the User Proxy,
+    generate a complete, working FEniCS code solution for finite element analysis.
+
+    # Core notes for solving elasticity problems
+    - The primary unknown 'u' is a vector field; always use VectorFunctionSpace.
+    - Define displacement as u_solution = Function(V), never pass TrialFunction directly to solve.
+    - Determine if the problem is linear or nonlinear:
+        - Linear elasticity:
+            - Use LinearVariationalProblem(a, L, u_solution, bcs) and LinearVariationalSolver(problem).
+        - Nonlinear elasticity:
+            - Define Residual F(u; v) and Jacobian J(u; v).
+            - Use NonlinearVariationalProblem(F, u_solution, bcs, J) and NonlinearVariationalSolver(problem).
+    - Weak form:
+        - Linear: epsilon(u) = sym(grad(u)), sigma(u) = lambda*tr(epsilon(u))*I + 2*mu*epsilon(u)
+        - Nonlinear: define appropriate residual and Jacobian.
+    - Ensure proper solver configuration, convergence checking, and post-processing.
+    - Include clear documentation explaining mathematical formulations and solver choices.
+
+    # Mesh generation notes to prevent zero-dimension issues
+    - Ensure that the mesh dimensions in all spatial directions are positive (no zero-length edges).
+    - For a 2D rectangular plate, define the mesh as:
+        mesh = RectangleMesh(Point(0, 0), Point(Lx, Ly), nx, ny)
+      where Lx = width in x, Ly = height in y. Do not set Ly = 0.
+    - If only one length is specified, assume a square: Lx = Ly.
+    - For 1D problems, use IntervalMesh instead of RectangleMesh.
+
+    # Additional instructions to avoid common FEniCS code issues
+    - Verify that all parentheses and mathematical expressions, especially in sigma(u), are correctly closed.
+    - When extracting vector or tensor data from Functions for post-processing or logging, always use `.vector().get_local()` instead of `.array()`.
+    - In the weak form, define the linear form L using `inner(Constant(...), v) * dx` to ensure proper inner-product usage.
+    - When plotting scalar fields from tensor components (e.g., σ_xy), project the component onto a suitable FunctionSpace before using `plot()`, so that `plt.colorbar()` works correctly.
+    - **MANDATORY: Create 'results/' directory if it doesn't exist using `os.makedirs('results', exist_ok=True)`**
+    - **MANDATORY: Save displacement plot as 'results/displacement.png' using `plt.savefig('results/displacement.png')`**
+    - **MANDATORY: Save stress/sigma plot as 'results/sigma_xy.png' using `plt.savefig('results/sigma.png')`**
+    - Validate that each variable is correctly defined as scalar, vector, or tensor, and used consistently in mathematical operations and function calls.
+    - Avoid saving different variables under the same filename or variable name to prevent overwriting results.
+    - Avoid variable name shadowing: do not reuse the same variable name for different concepts (e.g., `L` for both domain length and the right-hand side functional).
+    - Maintain scalar/vector/tensor consistency: always check that variables are treated according to their type and pay special attention when using operators such as dot, inner, grad, sym, or when multiplying terms.
+    - When plotting tensor-valued fields (e.g., stress tensors), always extract scalar components first. Project tensor fields to a TensorFunctionSpace, then project scalar components to FunctionSpace('P',1) for plotting.
+
+    Your code should:
+    1. Address all mathematical requirements specified in the problem statement
+    2. Follow FEniCS and scientific computing best practices and conventions
+    3. Include proper mesh generation or loading procedures, ensuring non-zero dimensions
+    4. Define appropriate function spaces and finite element formulations
+    5. Implement correct weak form formulations of the governing equations
+    6. Handle boundary conditions properly (Dirichlet, Neumann, Robin)
+    7. Include proper solver configuration and numerical parameters
+    8. Implement result visualization and output procedures
+    9. Include proper error handling and convergence checking
+    10. Be well-documented with mathematical explanations and comments
+    11. Include necessary imports and dependencies
+    12. Be structured in a logical, maintainable way following scientific computing practices
+    13. **Create results directory and save plots with exact filenames: displacement.png and sigma_xy.png**
+
+    Ensure the code is complete and ready for execution, including all necessary 
+    mathematical formulations, mesh handling, solver setup, and post-processing steps.
+    Also make sure that all essential problem data such as material properties 
+    (Young's modulus and Poisson's ratio) and boundary conditions are correctly defined.
+
+    **CRITICAL: The solution must include code that automatically:**
+    - Creates 'results/' directory if it doesn't exist
+    - Saves displacement visualization as 'results/displacement.png'
+    - Saves stress/sigma visualization as 'results/sigma.png'
+    - Uses `plt.savefig()` instead of `plt.show()` for both plots
+
+  expected_output: >
+    Complete FEniCS code solution including:
+    - Main implementation file with full mathematical formulation
+    - Proper mesh generation or loading procedures ensuring non-zero dimensions
+    - Correct VectorFunctionSpace setup and displacement function u_solution
+    - LinearVariationalProblem and LinearVariationalSolver usage for linear elasticity, or NonlinearVariationalProblem/Solver for nonlinear elasticity
+    - Correct weak form implementation for linear and nonlinear cases
+    - Proper boundary condition application
+    - Solver configuration and numerical parameter setup
+    - Result visualization and output procedures
+    - Required dependencies and import statements
+    - Clear documentation with mathematical context and usage instructions
+    - Error handling and convergence monitoring
+    - Setup and execution instructions with expected computational requirements
+    - **Automatically saved visualization outputs as 'results/displacement.png' and 'results/sigma_xy.png'**
+  agent: assistant_engineer
+  context:
+    - receive_problem_task
+  # output_file: "fenics_solution_complete57.md"
+
+
+execute_and_validate_fenics_task:
+  description: >
+    **MANDATORY: You MUST execute the FEniCS code using your "Docker Executer Tool" inside Python environment.**
+    Execute the FEniCS code generated by the Assistant Engineer and validate its
+    computational correctness, API consistency, and physical/mathematical validity.
+
+    Responsibilities:
+      1. Set up the computing environment and install required dependencies ( Python + FEniCS).
+      2. Execute the FEniCS code, logging all output, warnings, errors, and computational results.
+      3. Validate mesh quality and function space consistency:
+         - Ensure mesh dimensions are positive to avoid degenerate elements.
+         - For 2D rectangular plates: mesh = RectangleMesh(Point(0,0), Point(Lx,Ly), nx, ny)
+         - For square domains: if only one length is specified, assume Lx = Ly.
+         - For 1D problems: use IntervalMesh.
+      4. Verify correctness of material properties (Young's modulus, Poisson's ratio) and boundary conditions.
+      5. Monitor convergence behavior, numerical stability, and reasonableness of the solution.
+      6. Ensure proper extraction of field data:
+         - Use `.get_local()` for PETSc vectors instead of deprecated `.get_array()`.
+         - Correctly compute min/max/mean or further analysis on displacement/stress fields.
+      7. Check correctness of weak form and right-hand side definitions.
+      8. Validate API usage for all FEniCS objects:
+         - Function, Solver, Problem, BoundaryCondition, etc.
+         - No invalid attribute or method access (e.g., solver.solution).
+         - Post-processing must use solved displacement field (u_sol), not Trial/Test functions.
+      9. Detect and log all problems including:
+         - Syntax errors
+         - API misuse
+         - Mathematical or physical formulation errors
+      10. Report detailed error analysis including stack traces and, if needed, mathematical context to the Assistant Engineer.
+      11. Iterate execution and validation until:
+          - The code runs successfully
+          - Produces physically plausible and mathematically correct results
+          - Generates verified .png output via matplotlib
+      12. Save the final verified code to './final_code/'.
+
+  expected_output: >
+    Comprehensive FEniCS execution and validation report including:
+      - Recall of important problem data (material properties, BCs)
+      - Identification of mathematical formulation errors and API misuse
+      - Execution status with full logs, warnings, and error traces
+      - Mesh quality assessment and function space validation
+      - Correctness of weak form implementation and right-hand side
+      - Physical plausibility and convergence results
+      - Confirmation that all FEniCS objects are used correctly
+      - Final verified solution stored in a Function object
+      - **Verified .png file proving successful execution**
+      - Copy of the final working code saved to './final_code/' directory
+
+  agent: user_proxy
+  context:
+    - generate_initial_fenics_code_task
+    - debug_and_fix_fenics_code_task
+  # output_file: "fenics_solution_complete58.md"
+
+
+debug_and_fix_fenics_code_task:
+  description: >
+    Analyze the execution and validation feedback from the Execute & Validate (User Proxy) 
+    agent, then debug and fix the FEniCS code accordingly. 
+    The Engineer agent must **always respond to every reported problem** 
+    (syntax errors, API misuse, mathematical/physical issues, mesh or solver problems).
+
+    This process is **iterative and mandatory**: continue fixing until the code runs 
+    without errors, passes all validations, and produces the required `.png` outputs.
+
+    Responsibilities:
+      1. Read and carefully analyze all error messages, convergence issues, and feedback 
+         from the Execute & Validate task.
+      2. Verify and correct essential problem data:
+         - Material properties (Young’s modulus, Poisson’s ratio).
+         - Boundary conditions (correct edges/components, proper enforcement).
+         - Mesh definition (positive dimensions, non-degenerate elements).
+      3. Identify and fix issues in:
+         - Weak form (use sym(grad(v)) where required, correct L definition).
+         - Function space consistency (VectorFunctionSpace for displacements, etc.).
+         - Post-processing (always use solved field u_sol, not Trial/Test functions).
+         - Projection of fields before saving or plotting (displacements, stress).
+         - API version compatibility (dolfin vs dolfinx).
+      4. Review and improve solver configuration:
+         - Ensure stability with appropriate solver choice, tolerances, preconditioners.
+         - Handle nonlinear convergence by adjusting increments if needed.
+      5. Implement automated validation checks:
+         - BC enforcement (sample displacements on constrained nodes).
+         - Mesh quality consistency (no zero-length or degenerate elements).
+         - Stress tensor symmetry (if applicable).
+         - Force/mass balance spot-checks.
+         - Scalar/vector/tensor consistency in all expressions.
+      6. Add robust logging and error handling:
+         - Runtime errors and stack traces.
+         - Solver convergence history (iterations, residuals).
+         - Field statistics (min/max/mean displacement, min/max stresses).
+      7. Post-processing requirements:
+         - Save displacement field image (`displacement.png`).
+         - Save shear stress component σ_xy image (`sigma_xy.png`).
+         - Ensure plots use projected scalar fields for colorbars.
+      8. Iteration cycle:
+         - Apply fixes → re-run simulation → re-check validation criteria.
+         - Continue until simulation executes successfully and results are physically consistent.
+      9. Document each iteration:
+         - What was wrong and why,
+         - Exact code changes made,
+         - Expected effect of the fix.
+
+  expected_output: >
+    Debugged and corrected FEniCS solution package including:
+      - Final corrected, runnable FEniCS Python script.
+      - Changelog of all fixes (what, where, why).
+      - Execution log with solver convergence history and runtime stats.
+      - Validation artifacts:
+        - displacement.png
+        - sigma_xy.png
+        - Numeric summary of results (min/max/mean displacement and stresses).
+      - Automated validation checks results (pass/fail).
+      - Recommendations for solver or mesh refinement if needed.
+      - Final Markdown report including corrected code, images, logs, 
+        and step-by-step reproduction instructions.
+
+  agent: assistant_engineer
+  context:
+    - execute_and_validate_fenics_task
+  # output_file: "fenics_solution_complete59.md"
+
+  artifacts:
+    # - path: "outputs/fixed_fenics_script.py"
+    #   description: "Final corrected, runnable FEniCS Python script"
+    - path: "results/displacement.png"
+      description: "Displacement field image"
+    - path: "results/sigma_xy.png"
+      description: "Shear stress σ_xy image"
+    # - path: "outputs/execution_log.txt"
+    #   description: "Execution and solver log"
+    # - path: "outputs/validation_summary.json"
+    #   description: "Machine-readable validation results (pass/fail, numeric summaries)"
+    # - path: "outputs/changelog.md"
+    #   description: "Summary of all fixes and their justifications"
+    # - path: "outputs/final_report.md"
+    #   description: "Final report with code, figures, logs, and reproduction instructions"
+
+
+finalize_fenics_solution_task:
+  description: >
+    Once the FEniCS code is working correctly and producing physically meaningful results, 
+    finalize the computational solution and prepare the final deliverable for the user. This includes:
+    1. Perform final validation that all mathematical and computational requirements are met
+    2. Verify solution accuracy, convergence, and physical consistency
+    3. Clean up and optimize the final FEniCS code version for performance and readability
+    4. Ensure all documentation is complete, accurate, and includes mathematical context
+    5. Prepare comprehensive setup and usage instructions for the computational environment
+    6. Include important notes about mesh requirements, computational resources, and solver parameters
+    7. Provide result interpretation guidelines and post-processing recommendations
+    8. Include validation procedures and expected solution characteristics
+    9. Provide the final working FEniCS solution with complete mathematical documentation to the user
+    10. Summarize the computational approach, mathematical formulation, and any key numerical insights
+    
+    This is the final step that delivers the complete, tested, working FEniCS solution 
+    with full mathematical and computational documentation.
+
+    Additional requirement to prevent formatting issues:
+    - Ensure that the final FEniCS code output is **raw executable code**, not a string or markdown snippet.
+    - Avoid inserting newline characters (\n) or escape backslashes (\) in the output.
+    - Output should be copy-paste ready into a Python/FEniCS environment and run without modification.
+    - Use proper code blocks and indentation in the output, so it behaves as valid Python code.
+
+    Very important: Your output should only contain the final FEniCS code and nothing else.
+  expected_output: >
+    Very important: Your output should only contain the final FEniCS code and nothing else.
+  agent: assistant_engineer
+  context:
+    - debug_and_fix_fenics_code_task
+  output_file: "fenics_solution_complete60.md"
+
+
+conversation_task:
+  description:  >
+    Conversation Observer records the complete dialogue between user_proxy and assistant_engineer step by step,
+    showing each exchange clearly in sequence and give it in a file.
+  expected_output: >
+    A complete and well-structured conversation log containing:
+    - Each message exchanged between user_proxy and assistant_engineer in chronological order
+    - Clear labeling of who (user_proxy or assistant_engineer) sent each message
+    - Step-by-step sequencing of the dialogue
+    - Final output saved as a Markdown file with readable formatting  
+  agent: conversation_observer
+  output_file: 'test_conversation12.md'
